@@ -1,0 +1,57 @@
+
+.skeleton {
+    background: #f0f0f0;
+    position: relative;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.skeleton::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Event skeleton structure */
+.event-skeleton {
+    margin-bottom: 15px;
+    padding: 15px;
+    background: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    border-radius: 5px;
+}
+
+.event-skeleton-date {
+    width: 60px;
+    height: 60px;
+    margin-bottom: 10px;
+}
+
+.event-skeleton-title {
+    height: 24px;
+    width: 70%;
+    margin-bottom: 15px;
+}
+
+.event-skeleton-meta {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.event-skeleton-meta-item {
+    height: 20px;
+    width: 120px;
+}
