@@ -197,26 +197,38 @@ class Custom_Events_GitHub_Updater {
     }
 
     /**
+     * Gibt die API-Headers zurück (inkl. Token falls gesetzt)
+     */
+    private function get_api_headers() {
+        $headers = [
+            'Accept' => 'application/vnd.github.v3+json',
+            'User-Agent' => 'WordPress/Custom-Events-Plugin-Updater'
+        ];
+
+        $token = get_option('parkourone_github_token', '');
+        if ($token) {
+            $headers['Authorization'] = 'Bearer ' . $token;
+        }
+
+        return $headers;
+    }
+
+    /**
      * Holt den neuesten Commit SHA von GitHub
      */
     private function get_remote_version() {
         $api_url = "https://api.github.com/repos/{$this->github_repo}/commits/main";
+        $headers = $this->get_api_headers();
 
         $response = wp_remote_get($api_url, [
-            'headers' => [
-                'Accept' => 'application/vnd.github.v3+json',
-                'User-Agent' => 'WordPress/Custom-Events-Plugin-Updater'
-            ],
+            'headers' => $headers,
             'timeout' => 20,
             'sslverify' => true
         ]);
 
         if (is_wp_error($response)) {
             $response = wp_remote_get($api_url, [
-                'headers' => [
-                    'Accept' => 'application/vnd.github.v3+json',
-                    'User-Agent' => 'WordPress/Custom-Events-Plugin-Updater'
-                ],
+                'headers' => $headers,
                 'timeout' => 20,
                 'sslverify' => false
             ]);
@@ -279,12 +291,37 @@ class Custom_Events_GitHub_Updater {
             return false;
         }
 
-        $zip_url = "https://github.com/{$this->github_repo}/archive/refs/heads/main.zip";
-        $temp_file = download_url($zip_url);
+        $token = get_option('parkourone_github_token', '');
+        if ($token) {
+            // Für private Repos: GitHub API Zipball-Endpoint mit Auth
+            $zip_url = "https://api.github.com/repos/{$this->github_repo}/zipball/main";
+            $response = wp_remote_get($zip_url, [
+                'headers' => $this->get_api_headers(),
+                'timeout' => 60,
+                'sslverify' => true,
+                'stream' => true,
+                'filename' => wp_tempnam('cev_update')
+            ]);
 
-        if (is_wp_error($temp_file)) {
-            error_log('Custom Events Updater: Download fehlgeschlagen - ' . $temp_file->get_error_message());
-            return false;
+            if (is_wp_error($response)) {
+                error_log('Custom Events Updater: Download fehlgeschlagen - ' . $response->get_error_message());
+                return false;
+            }
+
+            if (wp_remote_retrieve_response_code($response) !== 200) {
+                error_log('Custom Events Updater: Download HTTP ' . wp_remote_retrieve_response_code($response));
+                return false;
+            }
+
+            $temp_file = $response['filename'];
+        } else {
+            $zip_url = "https://github.com/{$this->github_repo}/archive/refs/heads/main.zip";
+            $temp_file = download_url($zip_url);
+
+            if (is_wp_error($temp_file)) {
+                error_log('Custom Events Updater: Download fehlgeschlagen - ' . $temp_file->get_error_message());
+                return false;
+            }
         }
 
         $plugin_dir = $this->get_plugin_dir();
@@ -313,13 +350,19 @@ class Custom_Events_GitHub_Updater {
             return false;
         }
 
-        // GitHub erstellt Ordner mit "repo-main" Namen
+        // GitHub erstellt Ordner mit "repo-main" oder "org-repo-sha" Namen
         $extracted_dir = $temp_dir . '/' . $this->plugin_slug . '-main';
 
         if (!is_dir($extracted_dir)) {
-            error_log('Custom Events Updater: Extrahierter Ordner nicht gefunden: ' . $extracted_dir);
-            $this->remove_directory($temp_dir);
-            return false;
+            // Fallback: Ersten Unterordner suchen (API Zipball nutzt anderes Namensformat)
+            $dirs = glob($temp_dir . '/*', GLOB_ONLYDIR);
+            if (!empty($dirs)) {
+                $extracted_dir = $dirs[0];
+            } else {
+                error_log('Custom Events Updater: Extrahierter Ordner nicht gefunden: ' . $extracted_dir);
+                $this->remove_directory($temp_dir);
+                return false;
+            }
         }
 
         $this->clean_plugin_directory($plugin_dir);
