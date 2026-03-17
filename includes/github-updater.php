@@ -28,21 +28,52 @@ class Custom_Events_GitHub_Updater {
     }
 
     /**
+     * Holt den letzten Webhook-Eintrag für dieses Plugin
+     */
+    private function get_last_webhook_entry() {
+        $log = get_option('parkourone_webhook_updates', []);
+        $repo = $this->github_repo;
+
+        // Von hinten durchsuchen (neueste zuerst)
+        for ($i = count($log) - 1; $i >= 0; $i--) {
+            if (isset($log[$i]['repo']) && $log[$i]['repo'] === $repo) {
+                return $log[$i];
+            }
+        }
+        return null;
+    }
+
+    /**
      * Rendert die Update-Sektion (wird vom Admin-Menü eingebettet)
      */
     public function render_admin_section() {
         $local_version = $this->get_local_version();
-        $remote_version = $this->get_remote_version();
         $last_update = get_option($this->plugin_slug . '_last_update');
-        $last_check = get_transient($this->transient_key);
+        $last_webhook = $this->get_last_webhook_entry();
 
-        $is_up_to_date = ($local_version === $remote_version);
-        $next_check_in = $last_check ? human_time_diff(time(), $last_check + $this->check_interval) : 'Jetzt';
+        // Status bestimmen
+        $has_token = !empty(get_option('parkourone_github_token', ''));
+        $remote_version = null;
+        if ($has_token) {
+            $remote_version = $this->get_remote_version();
+        }
+
+        // Webhook-basierter Status
+        $webhook_ok = ($last_webhook && $local_version !== 'unknown' && $local_version === $last_webhook['version']);
 
         ?>
         <div style="background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px; margin-top: 20px;">
 
-            <h2 style="margin-top: 0;">Plugin Updates — Custom Events</h2>
+            <h2 style="margin-top: 0; display: flex; align-items: center; gap: 10px;">
+                Custom Events Plugin
+                <?php if ($webhook_ok): ?>
+                    <span style="background: #46b450; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: normal;">Aktuell</span>
+                <?php elseif ($last_webhook): ?>
+                    <span style="background: #f0b849; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: normal;">Prüfen</span>
+                <?php else: ?>
+                    <span style="background: #999; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: normal;">Kein Webhook</span>
+                <?php endif; ?>
+            </h2>
 
             <?php
             if (isset($_GET['cev_updated']) && $_GET['cev_updated'] === '1') {
@@ -57,66 +88,76 @@ class Custom_Events_GitHub_Updater {
 
             <table class="form-table" style="margin: 0;">
                 <tr>
-                    <th>Lokale Version:</th>
-                    <td><code style="font-size: 14px;"><?php echo esc_html($local_version); ?></code></td>
-                </tr>
-                <tr>
-                    <th>GitHub Version:</th>
+                    <th>Installierte Version:</th>
                     <td>
-                        <code style="font-size: 14px;"><?php echo esc_html($remote_version ?: 'Nicht erreichbar'); ?></code>
-                        <?php if ($is_up_to_date && $remote_version): ?>
-                            <span style="color: #46b450; margin-left: 10px;">&#10003; Aktuell</span>
-                        <?php elseif ($remote_version): ?>
-                            <span style="color: #dc3232; margin-left: 10px;">&#8593; Update verfügbar</span>
-                        <?php endif; ?>
-                        <?php if (!$remote_version && $this->last_error): ?>
-                            <br><small style="color: #dc3232;">Fehler: <?php echo esc_html($this->last_error); ?></small>
+                        <code style="font-size: 14px;"><?php echo esc_html($local_version); ?></code>
+                        <?php if ($local_version === 'unknown'): ?>
+                            <br><small style="color: #999;">Noch kein Webhook empfangen — wird beim nächsten Push gesetzt</small>
                         <?php endif; ?>
                     </td>
                 </tr>
+                <tr>
+                    <th>Letzter Webhook-Push:</th>
+                    <td>
+                        <?php if ($last_webhook): ?>
+                            <code style="font-size: 14px;"><?php echo esc_html($last_webhook['version']); ?></code>
+                            <span style="color: #666; margin-left: 8px;">
+                                <?php echo esc_html($last_webhook['time']); ?>
+                                (vor <?php echo human_time_diff(strtotime($last_webhook['time']), current_time('timestamp')); ?>)
+                            </span>
+                            <?php if ($webhook_ok): ?>
+                                <br><small style="color: #46b450;">&#10003; Webhook-Update erfolgreich installiert</small>
+                            <?php elseif ($local_version !== 'unknown'): ?>
+                                <br><small style="color: #f0b849;">&#9888; Lokale Version weicht ab — ggf. manuell prüfen</small>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <span style="color: #999;">Noch kein Webhook empfangen</span>
+                            <br><small style="color: #666;">Webhook-URL: <code>/wp-json/parkourone/v1/github-webhook</code></small>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php if ($last_update): ?>
                 <tr>
                     <th>Letztes Update:</th>
                     <td>
-                        <?php if ($last_update): ?>
-                            <?php echo esc_html($last_update['time']); ?>
-                            <span style="color: #666;">(<?php echo human_time_diff(strtotime($last_update['time']), current_time('timestamp')); ?> her)</span>
+                        <?php echo esc_html($last_update['time']); ?>
+                        <span style="color: #666;">(<?php echo human_time_diff(strtotime($last_update['time']), current_time('timestamp')); ?> her)</span>
+                    </td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($has_token && $remote_version): ?>
+                <tr>
+                    <th>GitHub API:</th>
+                    <td>
+                        <code style="font-size: 14px;"><?php echo esc_html($remote_version); ?></code>
+                        <?php if ($local_version === $remote_version): ?>
+                            <span style="color: #46b450; margin-left: 10px;">&#10003;</span>
                         <?php else: ?>
-                            <span style="color: #666;">Noch kein Update</span>
+                            <span style="color: #dc3232; margin-left: 10px;">&#8593; Update verfügbar</span>
                         <?php endif; ?>
                     </td>
                 </tr>
-                <tr>
-                    <th>Nächster Auto-Check:</th>
-                    <td>in <?php echo esc_html($next_check_in); ?></td>
-                </tr>
+                <?php endif; ?>
             </table>
 
             <hr style="margin: 20px 0;">
 
+            <?php if ($has_token): ?>
             <form method="post" style="display: inline;">
                 <?php wp_nonce_field('cev_manual_update', 'cev_nonce'); ?>
                 <button type="submit" name="cev_check_update" class="button button-primary" style="margin-right: 10px;">
                     Jetzt prüfen & aktualisieren
                 </button>
             </form>
+            <?php endif; ?>
 
             <a href="https://github.com/<?php echo esc_attr($this->github_repo); ?>/commits/main" target="_blank" class="button">
                 GitHub Commits ansehen
             </a>
 
             <p style="margin-top: 15px; color: #666; font-size: 13px;">
-                Auto-Check jede Stunde. Repo: <code><?php echo esc_html($this->github_repo); ?></code>
+                Repo: <code><?php echo esc_html($this->github_repo); ?></code> — Updates via Webhook bei jedem Push.
             </p>
-
-            <?php if (!$remote_version && $this->last_error): ?>
-            <details style="font-size: 13px; color: #666; margin-top: 10px;">
-                <summary style="cursor: pointer; font-weight: 600;">Debug-Informationen</summary>
-                <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-                    <p><strong>API URL:</strong> https://api.github.com/repos/<?php echo esc_html($this->github_repo); ?>/commits/main</p>
-                    <p><strong>Fehler:</strong> <?php echo esc_html($this->last_error); ?></p>
-                </div>
-            </details>
-            <?php endif; ?>
         </div>
         <?php
     }
