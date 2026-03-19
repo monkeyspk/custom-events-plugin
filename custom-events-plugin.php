@@ -108,7 +108,8 @@ function handle_cron_import(WP_REST_Request $request) {
             define('DOING_IMPORT', true);
         }
 
-        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+        $date_to = date('Y-m-d', strtotime('+12 months'));
+        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&dateTo=' . $date_to;
         error_log('Requesting API URL: ' . $api_url);
 
         $response = wp_remote_get($api_url, $args);
@@ -124,6 +125,21 @@ function handle_cron_import(WP_REST_Request $request) {
         if (empty($events)) {
             throw new Exception('No events found in API response');
         }
+
+        // Probetrainings auf 3 Monate begrenzen, Kurse & Workshops behalten bis 12 Monate
+        $probetraining_cutoff = date('Y-m-d', strtotime('+3 months'));
+        $events = array_filter($events, function($event) use ($probetraining_cutoff) {
+            $is_workshop = !empty($event['is_workshop']);
+            $is_course = !empty($event['is_course']);
+            if ($is_workshop || $is_course) {
+                return true; // Kurse & Workshops: 12 Monate behalten
+            }
+            // Probetrainings: nur bis 3 Monate
+            $event_date = isset($event['date']) ? $event['date'] : '';
+            return $event_date <= $probetraining_cutoff;
+        });
+        $events = array_values($events);
+        error_log('Events after date filtering (Probetraining 3m, Kurse/Workshops 12m): ' . count($events));
 
         $regions_handler = new Event_Regions_Handler();
         $selected_regions = get_option('event_selected_regions', array());
@@ -489,7 +505,12 @@ function import_events_from_api() {
 
     error_log('Starting event import from external API...');
 
-    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+    $date_to = date('Y-m-d', strtotime('+12 months'));
+    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&dateTo=' . $date_to;
+    $args = array(
+        'timeout' => 60,
+        'sslverify' => false
+    );
     $response = wp_remote_get($api_url, $args);
 
     if (is_wp_error($response)) {
@@ -506,6 +527,20 @@ function import_events_from_api() {
         wp_redirect(admin_url('edit.php?post_type=event&import_status=failed'));
         exit;
     }
+
+    // Probetrainings auf 3 Monate begrenzen, Kurse & Workshops behalten bis 12 Monate
+    $probetraining_cutoff = date('Y-m-d', strtotime('+3 months'));
+    $events = array_filter($events, function($event) use ($probetraining_cutoff) {
+        $is_workshop = !empty($event['is_workshop']);
+        $is_course = !empty($event['is_course']);
+        if ($is_workshop || $is_course) {
+            return true;
+        }
+        $event_date = isset($event['date']) ? $event['date'] : '';
+        return $event_date <= $probetraining_cutoff;
+    });
+    $events = array_values($events);
+    error_log('Events after date filtering: ' . count($events));
 
     $grouped_events = array();
     $imported_event_titles = array();
