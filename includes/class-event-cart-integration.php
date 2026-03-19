@@ -148,6 +148,12 @@ class Event_Cart_Integration {
              WC()->cart->cart_contents[$cart_item_key]['event_product_id'] = $product_id;
              WC()->cart->cart_contents[$cart_item_key]['event_id'] = $event_id;
 
+             // Event-Preis speichern für Warenkorb-Override
+             $event_price = get_post_meta($event_id, '_event_price', true);
+             if ($event_price !== '' && $event_price !== false) {
+                 WC()->cart->cart_contents[$cart_item_key]['event_custom_price'] = floatval($event_price);
+             }
+
 
              // HIER DEN DEBUG-CODE EINFÜGEN:
     error_log("DEBUG Cart: Product ID: " . $product_id);
@@ -415,10 +421,17 @@ class Event_Cart_Integration {
         if (is_admin() && !defined('DOING_AJAX')) {
             return;
         }
+        if (did_action('woocommerce_before_calculate_totals') >= 2) {
+            return;
+        }
 
         foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
             if (isset($cart_item['event_participant_data'])) {
                 $cart_item['quantity'] = count($cart_item['event_participant_data']);
+            }
+            // Event-Preis überschreiben (wie bei Gutscheinen)
+            if (isset($cart_item['event_custom_price'])) {
+                $cart_item['data']->set_price($cart_item['event_custom_price']);
             }
         }
     }
