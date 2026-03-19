@@ -216,6 +216,9 @@ class Custom_Events_GitHub_Updater {
      * Prüft und führt Auto-Update durch
      */
     public function maybe_auto_update() {
+        // Bei jedem Check alte Temp-Ordner aufräumen
+        $this->cleanup_old_temp_dirs();
+
         $last_check = get_transient($this->transient_key);
 
         if ($last_check !== false) {
@@ -318,9 +321,31 @@ class Custom_Events_GitHub_Updater {
     }
 
     /**
+     * Räumt alte Temp-Ordner auf die von fehlgeschlagenen Updates übrig geblieben sind
+     */
+    private function cleanup_old_temp_dirs() {
+        $plugins_dir = dirname($this->get_plugin_dir());
+        $pattern = $plugins_dir . '/' . $this->plugin_slug . '-temp-*';
+        $temp_dirs = glob($pattern, GLOB_ONLYDIR);
+
+        if (!is_array($temp_dirs)) return;
+
+        foreach ($temp_dirs as $dir) {
+            $dir_time = filemtime($dir);
+            if ($dir_time && (time() - $dir_time) > 3600) {
+                $this->remove_directory($dir);
+                error_log('Custom Events Updater: Alten Temp-Ordner gelöscht: ' . basename($dir));
+            }
+        }
+    }
+
+    /**
      * Führt das Update durch
      */
     private function do_update() {
+        // Alte Temp-Ordner aufräumen
+        $this->cleanup_old_temp_dirs();
+
         global $wp_filesystem;
 
         if (!function_exists('WP_Filesystem')) {
