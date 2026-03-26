@@ -117,8 +117,16 @@ class Event_API {
                 if ($offer && !in_array($offer, $event_categories)) {
                     $matches = false;
                 }
-                if ($age && !in_array($age, $event_categories)) {
-                    $matches = false;
+                if ($age) {
+                    // Support compound slugs like "juniors-adults" — match if age appears in any category slug
+                    $age_match = false;
+                    foreach ($event_categories as $cat) {
+                        if ($cat === $age || strpos($cat, $age) !== false) {
+                            $age_match = true;
+                            break;
+                        }
+                    }
+                    if (!$age_match) $matches = false;
                 }
                 if ($location && !in_array($location, $event_categories)) {
                     $matches = false;
