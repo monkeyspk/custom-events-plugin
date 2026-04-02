@@ -65,12 +65,18 @@ class Event_Dynamic_Product_Handler {
 
         if ($existing_product) {
             $product_id = $existing_product;
+
+            // Manuell angelegte Produkte nicht überschreiben
+            if (get_post_meta($product_id, '_auto_synced_product', true) !== '1') {
+                return $product_id;
+            }
+
             wp_update_post([
                 'ID' => $product_id,
                 'post_title' => $event_data['title'],
                 'post_status' => 'publish'
             ]);
-            
+
             // Stock nur aktualisieren wenn NICHT vom Theme geschützt
             if (get_post_meta($product_id, '_po_stock_protected', true) !== '1') {
                 if (isset($event_data['trail_seats'])) {
@@ -123,6 +129,7 @@ class Event_Dynamic_Product_Handler {
             wp_set_object_terms($product_id, 'simple', 'product_type');
         }
 
+        update_post_meta($product_id, '_auto_synced_product', '1');
         update_post_meta($product_id, '_event_id', $event_data['event_id']);
         update_post_meta($product_id, '_event_date', $event_data['date']);
         update_post_meta($product_id, '_virtual', 'yes');
@@ -182,6 +189,10 @@ class Event_Dynamic_Product_Handler {
 
         $products = get_posts($args);
         foreach ($products as $product) {
+            // Manuell angelegte Produkte nicht überschreiben
+            if (get_post_meta($product->ID, '_auto_synced_product', true) !== '1') {
+                continue;
+            }
             update_post_meta($product->ID, '_price', $new_price);
             update_post_meta($product->ID, '_regular_price', $new_price);
         }
