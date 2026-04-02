@@ -144,20 +144,8 @@ function handle_cron_import(WP_REST_Request $request) {
             throw new Exception('No events found in API response');
         }
 
-        // Probetrainings auf 3 Monate begrenzen, Kurse & Workshops behalten bis 12 Monate
-        $probetraining_cutoff = date('Y-m-d', strtotime('+3 months'));
-        $events = array_filter($events, function($event) use ($probetraining_cutoff) {
-            $is_workshop = !empty($event['is_workshop']);
-            $is_course = !empty($event['is_course']);
-            if ($is_workshop || $is_course) {
-                return true; // Kurse & Workshops: 12 Monate behalten
-            }
-            // Probetrainings: nur bis 3 Monate
-            $event_date = isset($event['date']) ? $event['date'] : '';
-            return $event_date <= $probetraining_cutoff;
-        });
-        $events = array_values($events);
-        error_log('Events after date filtering (Probetraining 3m, Kurse/Workshops 12m): ' . count($events));
+        // Alle Events für 12 Monate importieren (kein Probetraining-Filter mehr)
+        error_log('Events from API (12 Monate, kein Datumsfilter): ' . count($events));
 
         $regions_handler = new Event_Regions_Handler();
         $selected_regions = get_option('event_selected_regions', array());
@@ -558,19 +546,8 @@ function import_events_from_api() {
         exit;
     }
 
-    // Probetrainings auf 3 Monate begrenzen, Kurse & Workshops behalten bis 12 Monate
-    $probetraining_cutoff = date('Y-m-d', strtotime('+3 months'));
-    $events = array_filter($events, function($event) use ($probetraining_cutoff) {
-        $is_workshop = !empty($event['is_workshop']);
-        $is_course = !empty($event['is_course']);
-        if ($is_workshop || $is_course) {
-            return true;
-        }
-        $event_date = isset($event['date']) ? $event['date'] : '';
-        return $event_date <= $probetraining_cutoff;
-    });
-    $events = array_values($events);
-    error_log('Events after date filtering: ' . count($events));
+    // Alle Events für 12 Monate importieren (kein Probetraining-Filter mehr)
+    error_log('Events from API (12 Monate, kein Datumsfilter): ' . count($events));
 
     $grouped_events = array();
     $imported_event_titles = array();
