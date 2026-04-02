@@ -87,14 +87,32 @@ function custom_events_maybe_extend_time_limit($seconds = 300) {
     }
 }
 
+function custom_events_log_import($status, $message, $details = []) {
+    $log = get_option('custom_events_import_log', []);
+    array_unshift($log, [
+        'time'    => current_time('mysql'),
+        'status'  => $status, // 'success', 'error', 'started'
+        'message' => $message,
+        'details' => $details,
+    ]);
+    // Nur die letzten 20 Einträge behalten
+    $log = array_slice($log, 0, 20);
+    update_option('custom_events_import_log', $log, false);
+}
+
 function handle_cron_import(WP_REST_Request $request) {
     file_put_contents(__DIR__ . '/cron.log', date('Y-m-d H:i:s') . " - Cron wurde aufgerufen\n", FILE_APPEND);
 
-    custom_events_maybe_extend_time_limit();
+    custom_events_maybe_extend_time_limit(600);
+    if (function_exists('ini_set')) {
+        @ini_set('memory_limit', '512M');
+    }
+
+    custom_events_log_import('started', 'Import gestartet');
 
     try {
         $args = array(
-            'timeout' => 60,
+            'timeout' => 120,
             'sslverify' => false
         );
 
@@ -394,10 +412,15 @@ function handle_cron_import(WP_REST_Request $request) {
         }
 
         error_log("Cron import completed. Imported/updated {$imported_count} events and synchronized products.");
+        custom_events_log_import('success', "Import abgeschlossen: {$imported_count} Events importiert/aktualisiert", [
+            'events_from_api' => count(json_decode(wp_remote_retrieve_body($response), true) ?: []),
+            'events_imported' => $imported_count,
+        ]);
         return new WP_REST_Response(['success' => true], 200);
 
     } catch (Exception $e) {
         error_log('Cron import failed: ' . $e->getMessage());
+        custom_events_log_import('error', $e->getMessage());
         return new WP_REST_Response(['error' => $e->getMessage()], 500);
     }
 }
@@ -495,26 +518,33 @@ function handle_product_sync() {
 }
 
 function import_events_from_api() {
+    custom_events_maybe_extend_time_limit(600);
+    if (function_exists('ini_set')) {
+        @ini_set('memory_limit', '512M');
+    }
+
+    custom_events_log_import('started', 'Manueller Import gestartet');
+
     if (!defined('EVENT_API_TOKEN')) {
         error_log('EVENT_API_TOKEN nicht definiert');
+        custom_events_log_import('error', 'EVENT_API_TOKEN nicht definiert');
         wp_redirect(admin_url('edit.php?post_type=event&import_status=failed'));
         exit;
     }
-
-    custom_events_maybe_extend_time_limit();
 
     error_log('Starting event import from external API...');
 
     $date_to = date('Y-m-d', strtotime('+12 months'));
     $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&dateTo=' . $date_to;
     $args = array(
-        'timeout' => 60,
+        'timeout' => 120,
         'sslverify' => false
     );
     $response = wp_remote_get($api_url, $args);
 
     if (is_wp_error($response)) {
         error_log('External API Error: ' . $response->get_error_message());
+        custom_events_log_import('error', 'API-Fehler: ' . $response->get_error_message());
         wp_redirect(admin_url('edit.php?post_type=event&import_status=failed'));
         exit;
     }
@@ -657,6 +687,9 @@ function import_events_from_api() {
     }
 
     error_log('Events successfully imported, triggering product sync...');
+    custom_events_log_import('success', 'Manueller Import abgeschlossen', [
+        'events_from_api' => count(json_decode(wp_remote_retrieve_body($response), true) ?: []),
+    ]);
     wp_redirect(admin_url('edit.php?post_type=event&import_status=success&sync_products=1'));
     exit;
 }
