@@ -89,13 +89,24 @@ class Event_Cart_Integration {
 
             $is_known_participant = false;
             foreach ($existing_participants as $existing) {
-                if (
-                    $cart_participant['vorname'] === strtolower(trim($existing['vorname'])) &&
-                    $cart_participant['name'] === strtolower(trim($existing['name'])) &&
-                    $cart_participant['geburtsdatum'] === trim($existing['geburtsdatum'])
-                ) {
-                    $is_known_participant = true;
-                    break;
+                $existing_vorname = strtolower(trim($existing['vorname']));
+                $existing_name = strtolower(trim($existing['name']));
+                $existing_geb = trim($existing['geburtsdatum']);
+
+                // Manuelle Buchungen: nur Name vergleichen (kein Geburtsdatum vorhanden)
+                if ($existing_geb === 'manual') {
+                    if ($cart_participant['vorname'] === $existing_vorname &&
+                        $cart_participant['name'] === $existing_name) {
+                        $is_known_participant = true;
+                        break;
+                    }
+                } else {
+                    if ($cart_participant['vorname'] === $existing_vorname &&
+                        $cart_participant['name'] === $existing_name &&
+                        $cart_participant['geburtsdatum'] === $existing_geb) {
+                        $is_known_participant = true;
+                        break;
+                    }
                 }
             }
 
@@ -121,14 +132,15 @@ class Event_Cart_Integration {
 
     /**
      * Holt alle Teilnehmer, die mit einer E-Mail verknüpft sind (aus bestehenden Bestellungen).
+     * Berücksichtigt auch alte manuelle Buchungen ohne _event_participant_data.
      */
     private function get_existing_participants_by_email($email) {
         global $wpdb;
 
         $order_ids = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT post_id FROM {$wpdb->postmeta} 
-                WHERE meta_key = '_billing_email' 
+                "SELECT post_id FROM {$wpdb->postmeta}
+                WHERE meta_key = '_billing_email'
                 AND meta_value = %s",
                 $email
             )
@@ -140,6 +152,8 @@ class Event_Cart_Integration {
 
         $participants = array();
         $seen = array();
+        // Nur aktive Status berücksichtigen (nicht gelöschte/stornierte)
+        $inactive_statuses = array('cancelled', 'refunded', 'failed', 'trash', 'geloescht');
 
         foreach ($order_ids as $order_id) {
             $order = wc_get_order($order_id);
@@ -147,19 +161,21 @@ class Event_Cart_Integration {
                 continue;
             }
 
-            $dominated_statuses = array('cancelled', 'refunded', 'failed', 'trash');
-            if (in_array($order->get_status(), $dominated_statuses)) {
+            if (in_array($order->get_status(), $inactive_statuses)) {
                 continue;
             }
+
+            $found_participant_data = false;
 
             foreach ($order->get_items() as $item) {
                 $participant_data = $item->get_meta('_event_participant_data');
                 if (!empty($participant_data) && is_array($participant_data)) {
+                    $found_participant_data = true;
                     foreach ($participant_data as $participant) {
-                        $key = strtolower(trim($participant['vorname'] ?? '')) . '|' . 
-                               strtolower(trim($participant['name'] ?? '')) . '|' . 
+                        $key = strtolower(trim($participant['vorname'] ?? '')) . '|' .
+                               strtolower(trim($participant['name'] ?? '')) . '|' .
                                trim($participant['geburtsdatum'] ?? '');
-                        
+
                         if (!isset($seen[$key])) {
                             $participants[] = array(
                                 'vorname'      => $participant['vorname'] ?? '',
@@ -169,6 +185,23 @@ class Event_Cart_Integration {
                             $seen[$key] = true;
                         }
                     }
+                }
+            }
+
+            // Alte manuelle Buchungen ohne _event_participant_data:
+            // Billing-Name als Teilnehmer verwenden
+            if (!$found_participant_data) {
+                $first = strtolower(trim($order->get_billing_first_name()));
+                $last = strtolower(trim($order->get_billing_last_name()));
+                $key = $first . '|' . $last . '|manual';
+
+                if (!empty($first) && !empty($last) && !isset($seen[$key])) {
+                    $participants[] = array(
+                        'vorname'      => $order->get_billing_first_name(),
+                        'name'         => $order->get_billing_last_name(),
+                        'geburtsdatum' => 'manual'
+                    );
+                    $seen[$key] = true;
                 }
             }
         }
