@@ -136,9 +136,8 @@ function handle_cron_import(WP_REST_Request $request) {
             define('DOING_IMPORT', true);
         }
 
-        $date_to = date('Y-m-d', strtotime('+12 months'));
-        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&dateTo=' . $date_to;
-        error_log('Requesting API URL: ' . $api_url);
+        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+        error_log('Requesting API URL: ' . preg_replace('/token=[^&]+/', 'token=***', $api_url));
 
         $response = wp_remote_get($api_url, $args);
         error_log('API Response received');
@@ -545,8 +544,7 @@ function import_events_from_api() {
 
     error_log('Starting event import from external API...');
 
-    $date_to = date('Y-m-d', strtotime('+12 months'));
-    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&dateTo=' . $date_to;
+    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
     $args = array(
         'timeout' => 120,
         'sslverify' => false
