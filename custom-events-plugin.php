@@ -147,7 +147,20 @@ function handle_cron_import(WP_REST_Request $request) {
             throw new Exception('API request failed: ' . $response->get_error_message());
         }
 
-        $events = json_decode(wp_remote_retrieve_body($response), true);
+        $body = wp_remote_retrieve_body($response);
+        $http_code = wp_remote_retrieve_response_code($response);
+        $events = json_decode($body, true);
+
+        if ($http_code !== 200) {
+            throw new Exception('API returned HTTP ' . $http_code . ': ' . substr($body, 0, 200));
+        }
+
+        if (!is_array($events)) {
+            $json_error = json_last_error_msg();
+            error_log('[Event Import] JSON decode failed. Error: ' . $json_error . '. Body (first 500 chars): ' . substr($body, 0, 500));
+            throw new Exception('API-Antwort ist kein gültiges JSON (' . $json_error . '). HTTP ' . $http_code);
+        }
+
         error_log('Total events from API: ' . count($events));
 
         if (empty($events)) {
@@ -547,11 +560,23 @@ function import_events_from_api() {
         exit;
     }
 
-    $events = json_decode(wp_remote_retrieve_body($response), true);
+    $body = wp_remote_retrieve_body($response);
+    $http_code = wp_remote_retrieve_response_code($response);
+    $events = json_decode($body, true);
+
+    if (!is_array($events)) {
+        $json_error = json_last_error_msg();
+        error_log('[Event Import] JSON decode failed. Error: ' . $json_error . '. HTTP ' . $http_code . '. Body (first 500 chars): ' . substr($body, 0, 500));
+        custom_events_log_import('error', 'API-Antwort ist kein gültiges JSON (' . $json_error . '). HTTP ' . $http_code);
+        wp_redirect(admin_url('edit.php?post_type=event&import_status=failed'));
+        exit;
+    }
+
     error_log('Received external events count: ' . count($events));
 
     if (empty($events)) {
         error_log('No events found in external API response');
+        custom_events_log_import('error', 'Keine Events in API-Antwort');
         wp_redirect(admin_url('edit.php?post_type=event&import_status=failed'));
         exit;
     }
