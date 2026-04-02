@@ -108,7 +108,17 @@ function handle_cron_import(WP_REST_Request $request) {
         @ini_set('memory_limit', '512M');
     }
 
-    custom_events_log_import('started', 'Import gestartet');
+    custom_events_log_import('started', 'Import gestartet (memory: ' . ini_get('memory_limit') . ', max_exec: ' . ini_get('max_execution_time') . 's)');
+
+    // Shutdown-Handler: fängt Fatal Errors die try/catch nicht erreichen
+    register_shutdown_function(function() {
+        $error = error_get_last();
+        if ($error && in_array($error['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE])) {
+            $msg = $error['message'] . ' in ' . basename($error['file']) . ':' . $error['line'];
+            custom_events_log_import('error', 'FATAL: ' . $msg);
+            error_log('[Event Import] FATAL ERROR: ' . $msg);
+        }
+    });
 
     try {
         $args = array(
