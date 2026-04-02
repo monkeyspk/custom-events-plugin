@@ -5,6 +5,32 @@ class Event_Dynamic_Product_Handler {
         add_action('before_delete_post', array($this, 'cleanup_event_products'));
         add_action('wp_ajax_reindex_event_products', array($this, 'handle_product_reindex'));
         add_action('event_import_complete', array($this, 'sync_all_events_products'));
+
+        // Einmalige Migration: bestehende Import-Produkte taggen
+        if (get_option('_auto_sync_flag_migrated') !== '1') {
+            add_action('init', array($this, 'migrate_auto_sync_flags'));
+        }
+    }
+
+    public function migrate_auto_sync_flags() {
+        $products = get_posts([
+            'post_type'      => 'product',
+            'posts_per_page' => -1,
+            'fields'         => 'ids',
+            'meta_query'     => [
+                [
+                    'key'     => '_event_date',
+                    'compare' => 'EXISTS',
+                ],
+            ],
+        ]);
+
+        foreach ($products as $product_id) {
+            update_post_meta($product_id, '_auto_synced_product', '1');
+        }
+
+        update_option('_auto_sync_flag_migrated', '1');
+        error_log('[Event Sync] Migration: ' . count($products) . ' bestehende Produkte mit _auto_synced_product Flag versehen.');
     }
 
     public function sync_all_events_products() {
