@@ -124,6 +124,11 @@ class Event_Metaboxes {
         echo '<p><label for="event_dropdown_info"><strong>Dropdown Info:</strong></label><br />';
         echo '<textarea id="event_dropdown_info" name="event_dropdown_info" rows="2" style="width:100%;" placeholder="Diese Information wird im Dropdown angezeigt">' . esc_textarea(get_post_meta($post->ID, '_event_dropdown_info', true)) . '</textarea></p>';
 
+        $min_participants = get_post_meta($post->ID, '_event_min_participants', true);
+        echo '<p><label for="event_min_participants"><strong>Mindest-Teilnehmerzahl:</strong></label><br />';
+        echo '<input type="number" id="event_min_participants" name="event_min_participants" value="' . esc_attr($min_participants) . '" min="0" step="1" style="width:80px;" placeholder="0" />';
+        echo ' <span class="description">Ab wie vielen Anmeldungen findet die Klasse statt? (Leer oder 0 = kein Hinweis)</span></p>';
+
         // Termine anzeigen
         echo '<div class="event-dates">';
         echo '<h3>Termine</h3>';
@@ -211,7 +216,8 @@ class Event_Metaboxes {
             '_event_whatsapp_link' => 'esc_url_raw',
             '_event_region' => 'sanitize_text_field',
             '_event_description' => 'wp_kses_post',
-            '_event_dropdown_info' => 'wp_kses_post'  // Add this line for the new field
+            '_event_dropdown_info' => 'wp_kses_post',
+            '_event_min_participants' => 'absint'
 
         );
 
