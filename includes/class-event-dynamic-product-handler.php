@@ -60,17 +60,26 @@ class Event_Dynamic_Product_Handler {
         $event_dates = get_post_meta($event_id, '_event_dates', true);
         if (empty($event_dates)) return;
 
+        // Event-Typ bestimmt die Stock-Quelle:
+        //   - Kurs (is_course)    → available_seats (max. Teilnehmer)
+        //   - Workshop (is_workshop) → available_seats
+        //   - sonst (Probetraining) → trail_seats
+        $is_workshop = (int) get_post_meta($event_id, '_event_is_workshop', true) === 1;
+        $is_course   = (int) get_post_meta($event_id, '_event_is_course', true) === 1;
+        $use_available_seats = $is_workshop || $is_course;
+
         $this->cleanup_old_event_products($event_id, $event_dates);
 
         foreach ($event_dates as $date_info) {
             $this->create_or_update_event_product([
-                'event_id' => $event_id,
-                'title' => get_the_title($event_id) . ' - ' . $date_info['date'],
-                'date' => $date_info['date'],
-                'start_time' => $date_info['start_time'],
-                'end_time' => $date_info['end_time'],
-                'trail_seats' => isset($date_info['trail_seats']) ? $date_info['trail_seats'] : 0,
-                'available_seats' => isset($date_info['available_seats']) ? $date_info['available_seats'] : 0
+                'event_id'            => $event_id,
+                'title'               => get_the_title($event_id) . ' - ' . $date_info['date'],
+                'date'                => $date_info['date'],
+                'start_time'          => $date_info['start_time'],
+                'end_time'            => $date_info['end_time'],
+                'trail_seats'         => isset($date_info['trail_seats']) ? (int) $date_info['trail_seats'] : 0,
+                'available_seats'     => isset($date_info['available_seats']) ? (int) $date_info['available_seats'] : 0,
+                'use_available_seats' => $use_available_seats,
             ]);
         }
 
@@ -89,6 +98,14 @@ class Event_Dynamic_Product_Handler {
         $existing_product = $this->find_existing_product($event_data['event_id'], $event_data['date']);
         $price = get_post_meta($event_data['event_id'], '_event_price', true);
 
+        // Stock-Quelle je nach Event-Typ wählen.
+        // Kurse/Workshops: available_seats (max. Teilnehmer aus AcademyBoard).
+        // Probetrainings: trail_seats (Probeplätze).
+        $use_available_seats = !empty($event_data['use_available_seats']);
+        $stock = $use_available_seats
+            ? (int) ($event_data['available_seats'] ?? 0)
+            : (int) ($event_data['trail_seats'] ?? 0);
+
         if ($existing_product) {
             $product_id = $existing_product;
 
@@ -103,25 +120,15 @@ class Event_Dynamic_Product_Handler {
                 'post_status' => 'publish'
             ]);
 
-            // Stock nur aktualisieren wenn NICHT vom Theme geschützt
-            if (get_post_meta($product_id, '_po_stock_protected', true) !== '1') {
-                if (isset($event_data['trail_seats'])) {
-                    $trail_seats = $event_data['trail_seats'];
-                } else {
-                    $current_stock = get_post_meta($product_id, '_stock', true);
-                    $trail_seats = $current_stock !== '' ? $current_stock : 0;
-                }
-                if ($trail_seats > 0) {
-                    update_post_meta($product_id, '_stock', $trail_seats);
-                    update_post_meta($product_id, '_manage_stock', 'yes');
-                    update_post_meta($product_id, '_stock_status', 'instock');
-                } else {
-                    update_post_meta($product_id, '_stock', 0);
-                    update_post_meta($product_id, '_manage_stock', 'yes');
-                    update_post_meta($product_id, '_stock_status', 'outofstock');
-                }
-            }
-            
+            // API ist die einzige Wahrheit — alte _po_stock_protected-Flags
+            // werden ignoriert und entfernt, damit Kurse/Workshops zuverlässig
+            // auf available_seats zurückgesetzt werden.
+            delete_post_meta($product_id, '_po_stock_protected');
+
+            update_post_meta($product_id, '_stock', $stock);
+            update_post_meta($product_id, '_manage_stock', 'yes');
+            update_post_meta($product_id, '_stock_status', $stock > 0 ? 'instock' : 'outofstock');
+
             update_post_meta($product_id, '_price', $price);
             update_post_meta($product_id, '_regular_price', $price);
         } else {
@@ -131,24 +138,9 @@ class Event_Dynamic_Product_Handler {
                 'post_status' => 'publish'
             ]);
 
-            // Nutze die Trail Seats aus dem spezifischen Datum
-            // Bei neuen Produkten: Fallback auf _event_availability wenn trail_seats nicht vorhanden
-            if (isset($event_data['trail_seats'])) {
-                $trail_seats = $event_data['trail_seats'];
-            } else {
-                // Fallback für alte Events ohne trail_seats im dates Array
-                $trail_seats = get_post_meta($event_data['event_id'], '_event_availability', true);
-                $trail_seats = $trail_seats !== '' ? $trail_seats : 0;
-            }
-            if ($trail_seats > 0) {
-                update_post_meta($product_id, '_stock', $trail_seats);
-                update_post_meta($product_id, '_manage_stock', 'yes');
-                update_post_meta($product_id, '_stock_status', 'instock');
-            } else {
-                update_post_meta($product_id, '_stock', 0);
-                update_post_meta($product_id, '_manage_stock', 'yes');
-                update_post_meta($product_id, '_stock_status', 'outofstock');
-            }
+            update_post_meta($product_id, '_stock', $stock);
+            update_post_meta($product_id, '_manage_stock', 'yes');
+            update_post_meta($product_id, '_stock_status', $stock > 0 ? 'instock' : 'outofstock');
 
             update_post_meta($product_id, '_price', $price);
             update_post_meta($product_id, '_regular_price', $price);
