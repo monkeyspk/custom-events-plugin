@@ -60,30 +60,122 @@ class Event_Dynamic_Product_Handler {
         $event_dates = get_post_meta($event_id, '_event_dates', true);
         if (empty($event_dates)) return;
 
-        // Event-Typ bestimmt die Stock-Quelle:
-        //   - Kurs (is_course)    → available_seats (max. Teilnehmer)
-        //   - Workshop (is_workshop) → available_seats
-        //   - sonst (Probetraining) → trail_seats
+        // Produkt-Modell je nach Event-Typ:
+        //   - Kurs (is_course) oder Workshop (is_workshop):
+        //       EIN Produkt pro Event über alle Daten (Gesamt-Kurs/Workshop wird
+        //       als Einheit gebucht). Stock = min(available_seats) der Termine.
+        //   - Probetraining (weder Kurs noch Workshop):
+        //       EIN Produkt pro Datum. Stock = trail_seats des jeweiligen Datums.
         $is_workshop = (int) get_post_meta($event_id, '_event_is_workshop', true) === 1;
         $is_course   = (int) get_post_meta($event_id, '_event_is_course', true) === 1;
-        $use_available_seats = $is_workshop || $is_course;
+        $single_product_mode = $is_workshop || $is_course;
 
-        $this->cleanup_old_event_products($event_id, $event_dates);
+        // Bei Mode-Wechsel (oder entfernten Daten): alte Produkte deprecaten.
+        $this->cleanup_old_event_products($event_id, $event_dates, $single_product_mode);
 
-        foreach ($event_dates as $date_info) {
-            $this->create_or_update_event_product([
-                'event_id'            => $event_id,
-                'title'               => get_the_title($event_id) . ' - ' . $date_info['date'],
-                'date'                => $date_info['date'],
-                'start_time'          => $date_info['start_time'],
-                'end_time'            => $date_info['end_time'],
-                'trail_seats'         => isset($date_info['trail_seats']) ? (int) $date_info['trail_seats'] : 0,
-                'available_seats'     => isset($date_info['available_seats']) ? (int) $date_info['available_seats'] : 0,
-                'use_available_seats' => $use_available_seats,
+        if ($single_product_mode) {
+            // Ein einziges Gesamt-Produkt. Stock = kleinster verfügbarer Tag.
+            $seats = array_map(function($d) {
+                return isset($d['available_seats']) ? (int) $d['available_seats'] : 0;
+            }, $event_dates);
+            $stock = !empty($seats) ? min($seats) : 0;
+
+            $this->create_or_update_single_event_product([
+                'event_id' => $event_id,
+                'title'    => get_the_title($event_id),
+                'stock'    => $stock,
             ]);
+        } else {
+            foreach ($event_dates as $date_info) {
+                $this->create_or_update_event_product([
+                    'event_id'    => $event_id,
+                    'title'       => get_the_title($event_id) . ' - ' . $date_info['date'],
+                    'date'        => $date_info['date'],
+                    'start_time'  => $date_info['start_time'],
+                    'end_time'    => $date_info['end_time'],
+                    'trail_seats' => isset($date_info['trail_seats']) ? (int) $date_info['trail_seats'] : 0,
+                ]);
+            }
         }
 
         $this->update_event_products_price($event_id, get_post_meta($event_id, '_event_price', true));
+    }
+
+    /**
+     * Legt/aktualisiert das EINE Gesamt-Produkt für Kurse/Workshops.
+     * Unterscheidet sich vom per-Datum-Produkt durch Meta _event_single_product=1
+     * und das Fehlen von _event_date.
+     */
+    public function create_or_update_single_event_product($event_data) {
+        $existing_product = $this->find_existing_single_product($event_data['event_id']);
+        $price = get_post_meta($event_data['event_id'], '_event_price', true);
+        $stock = (int) ($event_data['stock'] ?? 0);
+
+        if ($existing_product) {
+            $product_id = $existing_product;
+
+            if (get_post_meta($product_id, '_auto_synced_product', true) !== '1') {
+                return $product_id;
+            }
+
+            wp_update_post([
+                'ID'          => $product_id,
+                'post_title'  => $event_data['title'],
+                'post_status' => 'publish',
+            ]);
+
+            delete_post_meta($product_id, '_po_stock_protected');
+        } else {
+            $product_id = wp_insert_post([
+                'post_title'  => $event_data['title'],
+                'post_type'   => 'product',
+                'post_status' => 'publish',
+            ]);
+            wp_set_object_terms($product_id, 'simple', 'product_type');
+        }
+
+        update_post_meta($product_id, '_stock', $stock);
+        update_post_meta($product_id, '_manage_stock', 'yes');
+        update_post_meta($product_id, '_stock_status', $stock > 0 ? 'instock' : 'outofstock');
+        update_post_meta($product_id, '_price', $price);
+        update_post_meta($product_id, '_regular_price', $price);
+
+        update_post_meta($product_id, '_auto_synced_product', '1');
+        update_post_meta($product_id, '_event_id', $event_data['event_id']);
+        update_post_meta($product_id, '_event_single_product', '1');
+        delete_post_meta($product_id, '_event_date');
+        update_post_meta($product_id, '_virtual', 'yes');
+        update_post_meta($product_id, '_sold_individually', 'no');
+
+        wp_cache_delete($product_id, 'post_meta');
+        wp_cache_delete($product_id, 'posts');
+        if (function_exists('wc_delete_product_transients')) {
+            wc_delete_product_transients($product_id);
+        }
+
+        $term = term_exists('Events', 'product_cat');
+        if (!$term) {
+            $term = wp_insert_term('Events', 'product_cat');
+        }
+        if (!is_wp_error($term)) {
+            wp_set_object_terms($product_id, $term['term_id'], 'product_cat');
+        }
+
+        return $product_id;
+    }
+
+    public function find_existing_single_product($event_id) {
+        $products = get_posts([
+            'post_type'      => 'product',
+            'post_status'    => ['publish', 'private', 'draft'],
+            'posts_per_page' => 1,
+            'fields'         => 'ids',
+            'meta_query'     => [
+                ['key' => '_event_id',             'value' => $event_id],
+                ['key' => '_event_single_product', 'value' => '1'],
+            ],
+        ]);
+        return !empty($products) ? $products[0] : false;
     }
 
     public function sync_event_products($post_id, $post, $update) {
@@ -98,13 +190,9 @@ class Event_Dynamic_Product_Handler {
         $existing_product = $this->find_existing_product($event_data['event_id'], $event_data['date']);
         $price = get_post_meta($event_data['event_id'], '_event_price', true);
 
-        // Stock-Quelle je nach Event-Typ wählen.
-        // Kurse/Workshops: available_seats (max. Teilnehmer aus AcademyBoard).
-        // Probetrainings: trail_seats (Probeplätze).
-        $use_available_seats = !empty($event_data['use_available_seats']);
-        $stock = $use_available_seats
-            ? (int) ($event_data['available_seats'] ?? 0)
-            : (int) ($event_data['trail_seats'] ?? 0);
+        // Per-Datum-Produkte existieren nur noch für Probetrainings.
+        // Stock-Quelle = trail_seats.
+        $stock = (int) ($event_data['trail_seats'] ?? 0);
 
         if ($existing_product) {
             $product_id = $existing_product;
@@ -216,28 +304,66 @@ class Event_Dynamic_Product_Handler {
         }
     }
 
-    private function cleanup_old_event_products($event_id, $current_dates) {
-        $args = array(
-            'post_type' => 'product',
-            'meta_query' => array(
-                array(
-                    'key' => '_event_id',
-                    'value' => $event_id
-                )
-            ),
-            'posts_per_page' => -1
-        );
+    private function cleanup_old_event_products($event_id, $current_dates, $single_product_mode = false) {
+        $products = get_posts([
+            'post_type'      => 'product',
+            'post_status'    => ['publish', 'private', 'draft'],
+            'posts_per_page' => -1,
+            'meta_query'     => [
+                ['key' => '_event_id', 'value' => $event_id],
+            ],
+        ]);
 
-        $products = get_posts($args);
         $current_dates_array = array_map(function($date) {
             return $date['date'];
         }, $current_dates);
 
         foreach ($products as $product) {
-            $product_date = get_post_meta($product->ID, '_event_date', true);
-            if (!in_array($product_date, $current_dates_array)) {
-                wp_delete_post($product->ID, true);
+            // Nur auto-gesynchte Produkte anfassen — manuell angelegte bleiben.
+            if (get_post_meta($product->ID, '_auto_synced_product', true) !== '1') {
+                continue;
             }
+
+            $is_single  = get_post_meta($product->ID, '_event_single_product', true) === '1';
+            $event_date = get_post_meta($product->ID, '_event_date', true);
+
+            if ($single_product_mode) {
+                // Gesamt-Produkt-Modus: alle per-Datum-Produkte deprecaten
+                // (nicht löschen wegen Order-Historie — auf private setzen,
+                // Stock auf 0, Out-of-stock, damit keine neuen Bestellungen).
+                if (!$is_single) {
+                    $this->deprecate_product($product->ID);
+                }
+            } else {
+                // Per-Datum-Modus: altes Single-Produkt deprecaten, falls vorhanden
+                if ($is_single) {
+                    $this->deprecate_product($product->ID);
+                    continue;
+                }
+                // Per-Datum-Produkte ohne passendes Datum löschen
+                if (!in_array($event_date, $current_dates_array)) {
+                    wp_delete_post($product->ID, true);
+                }
+            }
+        }
+    }
+
+    /**
+     * Setzt ein Produkt auf privat + out-of-stock, damit es nicht mehr verkauft
+     * werden kann, bestehende Bestellungen aber intakt bleiben.
+     */
+    private function deprecate_product($product_id) {
+        wp_update_post([
+            'ID'          => $product_id,
+            'post_status' => 'private',
+        ]);
+        update_post_meta($product_id, '_stock', 0);
+        update_post_meta($product_id, '_stock_status', 'outofstock');
+        update_post_meta($product_id, '_manage_stock', 'yes');
+        update_post_meta($product_id, '_deprecated_by_sync', '1');
+
+        if (function_exists('wc_delete_product_transients')) {
+            wc_delete_product_transients($product_id);
         }
     }
 
