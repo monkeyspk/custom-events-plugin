@@ -6,6 +6,11 @@ if (!defined('ABSPATH')) {
 class Event_API {
     private $json_path;
 
+    // Wenn sich die Datenform im Cache ändert (z.B. neue Felder wie is_course),
+    // diese Version erhöhen. Beim Plugin-Load wird der Cache neu geschrieben,
+    // sobald die gespeicherte Version nicht mit der aktuellen matcht.
+    const CACHE_SCHEMA_VERSION = 2;
+
     public function __construct() {
         $this->json_path = plugin_dir_path(__FILE__) . 'events.json';
         $this->maybe_create_cache_directory();
@@ -14,6 +19,18 @@ class Event_API {
         add_action('rest_api_init', array($this, 'register_rest_endpoints'));
         add_action('event_import_complete', array($this, 'update_json_cache'));
         add_action('woocommerce_product_set_stock', array($this, 'update_json_cache'));
+
+        // Schema-Migration: Cache neu schreiben wenn Version inkompatibel
+        add_action('init', array($this, 'maybe_migrate_cache'));
+    }
+
+    public function maybe_migrate_cache() {
+        $stored_version = (int) get_option('event_api_cache_schema_version', 0);
+        if ($stored_version !== self::CACHE_SCHEMA_VERSION) {
+            $this->update_json_cache();
+            update_option('event_api_cache_schema_version', self::CACHE_SCHEMA_VERSION);
+            error_log('Event_API: Cache schema migrated to version ' . self::CACHE_SCHEMA_VERSION);
+        }
     }
 
     private function maybe_create_cache_directory() {
@@ -77,6 +94,7 @@ class Event_API {
         $location = $request->get_param('location');
         $weekday = $request->get_param('weekday');
         $klasse_permalink = $request->get_param('klasse');
+        $only_probetraining = (bool) $request->get_param('only_probetraining');
 
 
         $json_content = file_get_contents($this->json_path);
@@ -104,6 +122,16 @@ class Event_API {
     });
     $events = array_values($events); // Array-Indizes neu indizieren
 }
+
+        // Nur Probetrainings — Kurse und Workshops rausfiltern.
+        // Wird auf der /probetraining-buchen/ Seite hart aktiviert, damit Ferienkurse,
+        // Sonntagstrainings etc. dort nicht erscheinen (unabhängig vom Publish-Status).
+        if ($only_probetraining) {
+            $events = array_filter($events, function($event) {
+                return empty($event['is_workshop']) && empty($event['is_course']);
+            });
+            $events = array_values($events);
+        }
 
         // Filtere nach Kategorien, falls Filter gesetzt
         if ($offer || $age || $location || $weekday) {
@@ -285,8 +313,8 @@ class Event_API {
             'venue_lat' => isset($date_info['venue_lat']) ? $date_info['venue_lat'] : get_post_meta($event_id, '_event_venue_lat', true),
             'venue_lng' => isset($date_info['venue_lng']) ? $date_info['venue_lng'] : get_post_meta($event_id, '_event_venue_lng', true),
             'permalink' => get_post_meta($event_id, '_event_permalink', true),
-            'is_workshop' => (bool) get_post_meta($event_id, '_event_is_workshop', true)
-
+            'is_workshop' => (bool) get_post_meta($event_id, '_event_is_workshop', true),
+            'is_course'   => (bool) get_post_meta($event_id, '_event_is_course', true)
         );
     }
 

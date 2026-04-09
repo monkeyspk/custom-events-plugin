@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Events Plugin
  * Description: A plugin to manage and display custom events with WooCommerce integration.
- * Version: 1.6
+ * Version: 1.7
  * Author: Pierre Biege
  */
 
