@@ -528,6 +528,11 @@ function handle_product_sync() {
 }
 
 function import_events_from_api() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('Unauthorized access', 'custom-events-plugin'), '', ['response' => 403]);
+    }
+    check_admin_referer('import_events_nonce');
+
     custom_events_maybe_extend_time_limit(600);
     if (function_exists('ini_set')) {
         @ini_set('memory_limit', '512M');
@@ -709,7 +714,7 @@ function add_import_button_to_event_page() {
     $screen = get_current_screen();
     if ($screen->post_type === 'event' && $screen->base === 'edit') {
         $selected_regions = get_option('event_selected_regions', array());
-        $import_url = admin_url('admin-post.php?action=import_events');
+        $import_url = wp_nonce_url(admin_url('admin-post.php?action=import_events'), 'import_events_nonce');
         $delete_url = wp_nonce_url(admin_url('admin-post.php?action=delete_all_events'), 'delete_all_events_nonce');
 
         echo '<div id="import-events-container" style="display: inline-block; position: relative;">
