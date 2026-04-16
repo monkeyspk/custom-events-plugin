@@ -123,7 +123,7 @@ function handle_cron_import(WP_REST_Request $request) {
     try {
         $args = array(
             'timeout' => 120,
-            'sslverify' => false
+            'sslverify' => true
         );
 
         error_log('Starting cron-triggered event import at ' . current_time('mysql'));
@@ -552,7 +552,7 @@ function import_events_from_api() {
     $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
     $args = array(
         'timeout' => 120,
-        'sslverify' => false
+        'sslverify' => true
     );
     $response = wp_remote_get($api_url, $args);
 

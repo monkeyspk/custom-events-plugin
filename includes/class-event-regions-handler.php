@@ -15,7 +15,7 @@ class Event_Regions_Handler {
 
         $args = array(
             'timeout' => 60,
-            'sslverify' => false
+            'sslverify' => true
         );
 
         $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
