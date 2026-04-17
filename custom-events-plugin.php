@@ -26,6 +26,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-event-regions-handler.p
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-rebooking-manager.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-admin-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-term-reassignment.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-event-course-import.php';
 
 // Deaktiviere WordPress Cron für unser Plugin
 if (!defined('DISABLE_WP_CRON')) {
@@ -136,7 +137,7 @@ function handle_cron_import(WP_REST_Request $request) {
             define('DOING_IMPORT', true);
         }
 
-        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&type=class';
         error_log('Requesting API URL: ' . preg_replace('/token=[^&]+/', 'token=***', $api_url));
 
         $response = wp_remote_get($api_url, $args);
@@ -422,9 +423,20 @@ function handle_cron_import(WP_REST_Request $request) {
         }
 
         error_log("Cron import completed. Imported/updated {$imported_count} events and synchronized products.");
-        custom_events_log_import('success', "Import abgeschlossen: {$imported_count} Events importiert/aktualisiert", [
+
+        // Kurse/Workshops separat in den angebot CPT importieren
+        $course_result = Event_Course_Import::run();
+        $course_summary = $course_result['imported'] . ' neu, ' . $course_result['updated'] . ' aktualisiert';
+        if (!empty($course_result['errors'])) {
+            $course_summary .= ', ' . count($course_result['errors']) . ' Fehler';
+        }
+        error_log('[Course Import] ' . $course_summary);
+
+        custom_events_log_import('success', "Import abgeschlossen: {$imported_count} Events, Kurse/Workshops: {$course_summary}", [
             'events_from_api' => count(json_decode(wp_remote_retrieve_body($response), true) ?: []),
             'events_imported' => $imported_count,
+            'courses_imported' => $course_result['imported'],
+            'courses_updated' => $course_result['updated'],
         ]);
         return new WP_REST_Response(['success' => true], 200);
 
@@ -549,7 +561,7 @@ function import_events_from_api() {
 
     error_log('Starting event import from external API...');
 
-    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&type=class';
     $args = array(
         'timeout' => 120,
         'sslverify' => true
