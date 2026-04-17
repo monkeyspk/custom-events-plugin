@@ -11,7 +11,7 @@ class Event_Course_Import {
      * @return array ['imported' => int, 'updated' => int, 'errors' => string[]]
      */
     public static function run() {
-        $result = ['imported' => 0, 'updated' => 0, 'errors' => []];
+        $result = ['imported' => 0, 'updated' => 0, 'errors' => [], 'log' => []];
 
         if (!defined('EVENT_API_TOKEN')) {
             $result['errors'][] = 'EVENT_API_TOKEN nicht definiert';
@@ -54,17 +54,20 @@ class Event_Course_Import {
         }
 
         if (empty($all_events)) {
+            $result['log'][] = 'Keine Kurse/Workshops von API erhalten';
             error_log('[Course Import] Keine Kurse/Workshops von API erhalten');
             return $result;
         }
 
-        // Region-Filter anwenden (gleiche Logik wie beim Event-Import)
-        $regions_handler   = new Event_Regions_Handler();
-        $all_events        = $regions_handler->filter_events_by_region($all_events);
+        $result['log'][] = count($all_events) . ' Einträge von API erhalten';
+
+        // Kein Region-Filter für Kurse/Workshops — die sind regionsübergreifend
+        // und sollen auf allen Standort-Seiten verfügbar sein.
 
         // Nach course_id gruppieren
         $grouped = self::group_by_course_id($all_events);
 
+        $result['log'][] = count($grouped) . ' einzigartige Kurse/Workshops nach Gruppierung';
         error_log('[Course Import] ' . count($grouped) . ' Kurse/Workshops gefunden');
 
         foreach ($grouped as $course_id => $data) {

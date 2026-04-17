@@ -27,6 +27,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-event-rebooking-manager
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-admin-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-term-reassignment.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-event-course-import.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-event-course-import-admin.php';
 
 // Deaktiviere WordPress Cron für unser Plugin
 if (!defined('DISABLE_WP_CRON')) {
@@ -45,6 +46,7 @@ function custom_events_plugin_init() {
     Event_Admin_Page::init($regions_handler, $rebooking_manager);
 }
 add_action('plugins_loaded', 'custom_events_plugin_init');
+Event_Course_Import_Admin::init();
 
 // REST API Endpoint für Cron
 add_action('rest_api_init', function () {
@@ -431,6 +433,8 @@ function handle_cron_import(WP_REST_Request $request) {
 
         // Kurse/Workshops separat in den angebot CPT importieren
         $course_result = Event_Course_Import::run();
+        update_option('course_import_last_result', $course_result, false);
+        update_option('course_import_last_run', current_time('mysql'), false);
         $course_summary = $course_result['imported'] . ' neu, ' . $course_result['updated'] . ' aktualisiert';
         if (!empty($course_result['errors'])) {
             $course_summary .= ', ' . count($course_result['errors']) . ' Fehler';
