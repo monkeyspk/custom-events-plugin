@@ -87,7 +87,15 @@ class Event_Course_Import {
             }
         }
 
-        error_log('[Course Import] Fertig: ' . $result['imported'] . ' neu, ' . $result['updated'] . ' aktualisiert');
+        // Cleanup: API-importierte Angebote löschen deren course_id nicht mehr geliefert wird
+        $imported_course_ids = array_keys($grouped);
+        $removed = self::cleanup_stale_angebote($imported_course_ids);
+        $result['removed'] = $removed;
+        if ($removed > 0) {
+            $result['log'][] = $removed . ' veraltete Kurse/Workshops in Papierkorb verschoben';
+        }
+
+        error_log('[Course Import] Fertig: ' . $result['imported'] . ' neu, ' . $result['updated'] . ' aktualisiert, ' . $removed . ' entfernt');
         return $result;
     }
 
@@ -363,4 +371,52 @@ class Event_Course_Import {
         return $product_id;
     }
 
+    /**
+     * Entfernt API-importierte Angebote deren course_id nicht mehr in der API ist.
+     * Verschiebt in den Papierkorb (nicht permanent löschen) und deaktiviert WC-Produkt.
+     */
+    private static function cleanup_stale_angebote(array $active_course_ids): int {
+        $removed = 0;
+
+        $query = new WP_Query([
+            'post_type'      => 'angebot',
+            'post_status'    => ['publish', 'draft'],
+            'posts_per_page' => -1,
+            'meta_query'     => [
+                ['key' => '_angebot_api_import', 'value' => '1'],
+            ],
+        ]);
+
+        if (!$query->have_posts()) {
+            return 0;
+        }
+
+        while ($query->have_posts()) {
+            $query->the_post();
+            $post_id   = get_the_ID();
+            $course_id = get_post_meta($post_id, '_angebot_course_id', true);
+
+            if (!empty($course_id) && in_array($course_id, $active_course_ids)) {
+                continue;
+            }
+
+            // WC-Produkt deaktivieren
+            $product_id = (int) get_post_meta($post_id, '_angebot_ferienkurs_produkt_id', true);
+            if ($product_id && function_exists('wc_get_product')) {
+                $product = wc_get_product($product_id);
+                if ($product) {
+                    $product->set_status('draft');
+                    $product->set_stock_status('outofstock');
+                    $product->save();
+                }
+            }
+
+            wp_trash_post($post_id);
+            error_log('[Course Import] Papierkorb: ' . get_the_title() . ' (course_id: ' . $course_id . ')');
+            $removed++;
+        }
+        wp_reset_postdata();
+
+        return $removed;
+    }
 }

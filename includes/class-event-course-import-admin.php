@@ -106,6 +106,12 @@ class Event_Course_Import_Admin {
                             <td><strong>Aktualisiert</strong></td>
                             <td><?php echo intval($last_result['updated']); ?></td>
                         </tr>
+                        <?php if (!empty($last_result['removed'])): ?>
+                        <tr>
+                            <td><strong>Entfernt (Papierkorb)</strong></td>
+                            <td><span style="color:#d63638;font-weight:600;"><?php echo intval($last_result['removed']); ?></span></td>
+                        </tr>
+                        <?php endif; ?>
                         <?php if (!empty($last_result['errors'])): ?>
                         <tr>
                             <td><strong>Fehler</strong></td>
