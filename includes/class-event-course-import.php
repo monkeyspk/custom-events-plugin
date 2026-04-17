@@ -61,8 +61,11 @@ class Event_Course_Import {
 
         $result['log'][] = count($all_events) . ' Einträge von API erhalten';
 
-        // Kein Region-Filter für Kurse/Workshops — die sind regionsübergreifend
-        // und sollen auf allen Standort-Seiten verfügbar sein.
+        // Region-Filter: nur Kurse/Workshops aus den im Backend gewählten Regionen
+        $regions_handler = new Event_Regions_Handler();
+        $before_filter   = count($all_events);
+        $all_events      = $regions_handler->filter_events_by_region($all_events);
+        $result['log'][] = count($all_events) . ' nach Region-Filter (von ' . $before_filter . ')';
 
         // Nach course_id gruppieren
         $grouped = self::group_by_course_id($all_events);
