@@ -236,45 +236,25 @@ class Event_Course_Import {
             return strcmp($a['datum'], $b['datum']);
         });
 
-        // Buchungsart + WC-Produkt-Strategie:
-        // Workshop: jeder Termin ist einzeln buchbar → ein WC-Produkt PRO Datum
-        // Kurs/Ferienkurs: alle Daten als Paket → EIN WC-Produkt für den ganzen Kurs
+        // Buchungsart + WC-Produkt:
+        // Workshop: immer genau 1 Datum, 1 Preis → 1 WC-Produkt
+        // Kurs/Ferienkurs: mehrere Daten, 1 Gesamtpreis → 1 WC-Produkt (Paket)
+        // Beide nutzen _angebot_ferienkurs_produkt_id für das single-product.
         $buchungsart_existing = get_post_meta($post_id, '_angebot_buchungsart', true);
 
-        if ($buchungsart_existing === 'extern') {
-            // Admin hat manuell extern gesetzt → nicht überschreiben, keine WC-Produkte
-            foreach ($dates as $d) {
-                $termine[] = self::build_termin_entry($d, $venue);
-            }
-        } elseif ($has_price && $is_workshop) {
-            // WORKSHOP: ein WC-Produkt pro Termin (einzeln buchbar)
-            update_post_meta($post_id, '_angebot_buchungsart', 'woocommerce');
-            update_post_meta($post_id, '_angebot_ferienkurs_produkt_id', '');
+        foreach ($dates as $d) {
+            $termine[] = self::build_termin_entry($d, $venue);
+        }
 
-            foreach ($dates as $d) {
-                $termin = self::build_termin_entry($d, $venue);
-                $termin['preis'] = number_format(floatval($price), 0, ',', '.') . ' CHF';
-                $termin['produkt_id'] = self::ensure_wc_product_for_date(
-                    $post_id, $name, $price, $d
-                );
-                $termine[] = $termin;
-            }
+        if ($buchungsart_existing === 'extern') {
+            // Admin hat manuell extern gesetzt → nicht überschreiben
         } elseif ($has_price) {
-            // KURS / FERIENKURS: ein WC-Produkt für das Gesamtpaket
             update_post_meta($post_id, '_angebot_buchungsart', 'woocommerce');
             $product_id = self::ensure_wc_product_single($post_id, $name, $price, $dates);
             update_post_meta($post_id, '_angebot_ferienkurs_produkt_id', $product_id);
-
-            foreach ($dates as $d) {
-                $termine[] = self::build_termin_entry($d, $venue);
-            }
         } else {
-            // Kein Preis → kontakt (falls nicht bereits gesetzt)
             if (empty($buchungsart_existing)) {
                 update_post_meta($post_id, '_angebot_buchungsart', 'kontakt');
-            }
-            foreach ($dates as $d) {
-                $termine[] = self::build_termin_entry($d, $venue);
             }
         }
 
@@ -377,67 +357,4 @@ class Event_Course_Import {
         return $product_id;
     }
 
-    /**
-     * Workshop: ein WC-Produkt PRO Termin-Datum (einzeln buchbar).
-     */
-    private static function ensure_wc_product_for_date(int $angebot_id, string $name, $price, array $date_entry): int {
-        if (!function_exists('wc_get_product')) {
-            throw new Exception('WooCommerce nicht aktiv');
-        }
-
-        $datum = $date_entry['datum'] ?? '';
-        $seats = intval($date_entry['available_seats'] ?? 0);
-
-        // Existierendes Produkt für dieses Datum suchen
-        $existing = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'any',
-            'posts_per_page' => 1,
-            'meta_query'     => [
-                'relation' => 'AND',
-                ['key' => '_angebot_id', 'value' => $angebot_id],
-                ['key' => '_event_date', 'value' => $datum],
-            ],
-        ]);
-
-        if (!empty($existing)) {
-            $product = wc_get_product($existing[0]->ID);
-            if ($product) {
-                $product->set_regular_price(floatval($price));
-                if ($seats > 0) {
-                    $product->set_manage_stock(true);
-                    $product->set_stock_quantity($seats);
-                    $product->set_stock_status('instock');
-                }
-                $product->save();
-                return $existing[0]->ID;
-            }
-        }
-
-        // Datum formatieren für Produktname
-        $date_label = '';
-        if (!empty($datum)) {
-            $ts = strtotime($datum);
-            if ($ts) {
-                $date_label = date_i18n('j. F Y', $ts);
-            }
-        }
-
-        $product = new WC_Product_Simple();
-        $product->set_name($name . ($date_label ? ' – ' . $date_label : ''));
-        $product->set_status('publish');
-        $product->set_catalog_visibility('hidden');
-        $product->set_regular_price(floatval($price));
-        $product->set_virtual(true);
-        if ($seats > 0) {
-            $product->set_manage_stock(true);
-            $product->set_stock_quantity($seats);
-            $product->set_stock_status('instock');
-        }
-        $product_id = $product->save();
-        update_post_meta($product_id, '_angebot_id', $angebot_id);
-        update_post_meta($product_id, '_event_date', $datum);
-
-        return $product_id;
-    }
 }
