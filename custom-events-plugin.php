@@ -137,7 +137,7 @@ function handle_cron_import(WP_REST_Request $request) {
             define('DOING_IMPORT', true);
         }
 
-        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&type=class';
+        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
         error_log('Requesting API URL: ' . preg_replace('/token=[^&]+/', 'token=***', $api_url));
 
         $response = wp_remote_get($api_url, $args);
@@ -188,6 +188,11 @@ function handle_cron_import(WP_REST_Request $request) {
         foreach ($events as $event_data) {
             $event_identifier = isset($event_data['name']) ? trim($event_data['name']) : '';
             if (empty($event_identifier)) {
+                continue;
+            }
+
+            // Kurse/Workshops überspringen — werden separat in angebot CPT importiert
+            if (!empty($event_data['is_course']) || !empty($event_data['is_workshop'])) {
                 continue;
             }
 
@@ -561,7 +566,7 @@ function import_events_from_api() {
 
     error_log('Starting event import from external API...');
 
-    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN . '&type=class';
+    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
     $args = array(
         'timeout' => 120,
         'sslverify' => true
@@ -605,6 +610,11 @@ function import_events_from_api() {
     foreach ($events as $event_data) {
         $event_identifier = isset($event_data['name']) ? trim($event_data['name']) : '';
         if (empty($event_identifier)) {
+            continue;
+        }
+
+        // Kurse/Workshops überspringen — werden separat in angebot CPT importiert
+        if (!empty($event_data['is_course']) || !empty($event_data['is_workshop'])) {
             continue;
         }
 
