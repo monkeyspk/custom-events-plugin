@@ -6,18 +6,18 @@ class Event_CPT {
 
     public function register_event_post_type() {
         $labels = array(
-            'name' => 'Events',
-            'singular_name' => 'Event',
-            'add_new' => 'Add New Event',
-            'all_items' => 'All Events',
-            'add_new_item' => 'Add New Event',
-            'edit_item' => 'Edit Event',
-            'new_item' => 'New Event',
-            'view_item' => 'View Event',
-            'search_items' => 'Search Events',
-            'not_found' => 'No events found',
-            'not_found_in_trash' => 'No events found in Trash',
-            'parent_item_colon' => 'Parent Event'
+            'name' => 'Klassen',
+            'singular_name' => 'Klasse',
+            'add_new' => 'Neue Klasse',
+            'all_items' => 'Alle Klassen',
+            'add_new_item' => 'Neue Klasse hinzufügen',
+            'edit_item' => 'Klasse bearbeiten',
+            'new_item' => 'Neue Klasse',
+            'view_item' => 'Klasse ansehen',
+            'search_items' => 'Klassen suchen',
+            'not_found' => 'Keine Klassen gefunden',
+            'not_found_in_trash' => 'Keine Klassen im Papierkorb',
+            'parent_item_colon' => 'Übergeordnete Klasse'
         );
 
         $args = array(
@@ -86,7 +86,7 @@ function show_events_without_category_warning() {
         }
 
         echo '<div class="notice notice-error">';
-        echo '<p><strong>🚨 ACHTUNG: ' . $count . ' Event(s) ohne Kategorie!</strong> ';
+        echo '<p><strong>🚨 ACHTUNG: ' . $count . ' Klasse(n) ohne Kategorie!</strong> ';
         echo 'Bitte sofort zuweisen: ' . implode(', ', $event_links) . $more_text . '</p>';
         echo '</div>';
     }
