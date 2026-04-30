@@ -1,7 +1,7 @@
 <?php
 class Event_Cart_Integration {
     public function __construct() {
-        add_filter('woocommerce_add_to_cart_validation', array($this, 'validate_single_event_per_cart'), 10, 2);
+        add_filter('woocommerce_add_to_cart_validation', array($this, 'validate_single_booking_per_cart'), 10, 2);
         add_action('woocommerce_add_to_cart', array($this, 'add_participant_data_to_cart'), 10, 6);
         add_filter('woocommerce_get_item_data', array($this, 'display_participant_data_in_cart'), 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', array($this, 'save_participant_data_to_order'), 10, 4);
@@ -11,37 +11,34 @@ class Event_Cart_Integration {
     }
 
     /**
-     * Verhindert, dass mehrere Event-Produkte (Workshop/Kurs) gleichzeitig im Warenkorb sind.
-     * Pro Bestellung ist nur 1 Event erlaubt, da Status, Emails und Coach-Erinnerungen
-     * auf ein einzelnes Event pro Order ausgelegt sind.
+     * Beschränkt den Warenkorb auf genau 1 Buchung mit genau 1 Teilnehmer.
+     *
+     * Hintergrund: Der AcademyBoard-Sync (Downstream) verarbeitet aktuell nur eine
+     * Order mit einem Item und einem Participant pro Cart. Mehrere Items oder
+     * mehrere Teilnehmer pro Item brechen den Sync. Diese Validation blockt
+     * deshalb JEDES 2. Item — egal welcher Produkttyp (Event, Gutschein, sonstiges).
+     *
+     * Temporäre Brücke: Wird obsolet, sobald der Multi-Line-Contract-Service im
+     * Abomodell-Build (`ab-webhook-endpoint-abomodell/`) post-Dresden produktiv ist.
+     * Notice-Text wörtlich von Roger vorgegeben — nicht paraphrasieren.
      */
-    public function validate_single_event_per_cart($passed, $product_id) {
+    public function validate_single_booking_per_cart($passed, $product_id) {
         if (!$passed) {
             return false;
         }
 
-        // Prüfe ob das neue Produkt ein Event-Produkt ist
-        $new_event_id = get_post_meta($product_id, '_event_id', true);
-        if (empty($new_event_id)) {
-            return true; // Kein Event-Produkt → kein Problem
-        }
-
-        // Prüfe ob bereits ein Event-Produkt im Warenkorb liegt
+        // Defensive: Wenn der Cart-Container nicht existiert, gibt es nichts zu blocken.
         if (!WC()->cart) {
             return true;
         }
 
-        foreach (WC()->cart->get_cart() as $cart_item) {
-            $cart_product_id = $cart_item['product_id'];
-            $cart_event_id = get_post_meta($cart_product_id, '_event_id', true);
-
-            if (!empty($cart_event_id)) {
-                wc_add_notice(
-                    __('Du kannst nur ein Event pro Bestellung buchen. Bitte schliesse zuerst die aktuelle Buchung ab oder entferne das andere Event aus dem Warenkorb.', 'custom-events'),
-                    'error'
-                );
-                return false;
-            }
+        // Wenn schon irgendein Item im Warenkorb liegt → 2. Buchung blocken.
+        if (count(WC()->cart->get_cart()) >= 1) {
+            wc_add_notice(
+                __('Sorry, mehrere Buchungen gleichzeitig sind technisch gerade nicht möglich. Wir arbeiten daran. Bitte schliesse die aktuelle Buchung erst ab und starte dann eine neue für die weitere Person.', 'custom-events'),
+                'error'
+            );
+            return false;
         }
 
         return true;
@@ -248,6 +245,13 @@ class Event_Cart_Integration {
                          $filled_fields++;
                      }
                  }
+                 // Single-Booking-Limit (siehe validate_single_booking_per_cart):
+                 // AcademyBoard-Sync verarbeitet nur 1 Participant pro Cart-Item.
+                 // Sicherheitsnetz gegen Frontend-Bypass — Server kappt hart auf 1.
+                 if ( count( $participant_data ) > 1 ) {
+                     $participant_data = array_slice( $participant_data, 0, 1 );
+                 }
+                 $filled_fields = count( $participant_data );
                  WC()->cart->cart_contents[$cart_item_key]['event_participant_data'] = $participant_data;
                  WC()->cart->cart_contents[$cart_item_key]['quantity'] = $filled_fields;
              }
