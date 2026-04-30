@@ -35,7 +35,7 @@ class Event_Cart_Integration {
         // Wenn schon irgendein Item im Warenkorb liegt → 2. Buchung blocken.
         if (count(WC()->cart->get_cart()) >= 1) {
             wc_add_notice(
-                __('Sorry, mehrere Buchungen gleichzeitig sind technisch gerade nicht möglich. Wir arbeiten daran. Bitte schliesse die aktuelle Buchung erst ab und starte dann eine neue für die weitere Person.', 'custom-events'),
+                __('Danke, dass du gleich mehrere Buchungen bei uns machen möchtest. Leider ist das aktuell technisch nicht möglich, aber wir arbeiten dran. Bitte schliesse die aktuelle Buchung erst ab und starte dann eine neue für die weitere Person. Danke für dein Verständnis und wir bitten für die Umstände um Entschuldigung.', 'custom-events'),
                 'error'
             );
             return false;
