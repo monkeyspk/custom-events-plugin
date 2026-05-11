@@ -220,9 +220,13 @@ class Event_Course_Import {
             update_post_meta($post_id, '_angebot_wann', $wann);
         }
 
-        // Preis (Anzeige-Text)
+        // Preis (Anzeige-Text) — Währung aus WooCommerce-Settings statt hardcoded CHF.
+        // Multi-Tenant: jede Schule hat eigene WP-Installation mit eigener WC-Currency
+        // (CHF für CH-Schulen, EUR für DE-Schulen). AB liefert die Zahl in lokaler
+        // Währung, das Symbol ergänzen wir nach WC-Config.
         if ($has_price) {
-            update_post_meta($post_id, '_angebot_preis', number_format(floatval($price), 0, ',', '.') . ' CHF');
+            $currency_symbol = function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : 'CHF';
+            update_post_meta($post_id, '_angebot_preis', number_format(floatval($price), 0, ',', '.') . ' ' . $currency_symbol);
         }
 
         // Kategorie-Zuordnung (VOR Termine, da Buchungslogik davon abhängt)
