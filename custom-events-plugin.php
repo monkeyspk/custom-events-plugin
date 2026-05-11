@@ -142,11 +142,13 @@ function handle_cron_import(WP_REST_Request $request) {
         $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
         error_log('Requesting API URL: ' . preg_replace('/token=[^&]+/', 'token=***', $api_url));
 
+        $request_start = microtime(true);
         $response = wp_remote_get($api_url, $args);
-        error_log('API Response received');
+        $request_duration = round(microtime(true) - $request_start, 2);
+        error_log('API Response received after ' . $request_duration . 's');
 
         if (is_wp_error($response)) {
-            throw new Exception('API request failed: ' . $response->get_error_message());
+            throw new Exception('API request failed after ' . $request_duration . 's: ' . $response->get_error_message());
         }
 
         $body = wp_remote_retrieve_body($response);
@@ -154,13 +156,20 @@ function handle_cron_import(WP_REST_Request $request) {
         $events = json_decode($body, true);
 
         if ($http_code !== 200) {
-            throw new Exception('API returned HTTP ' . $http_code . ': ' . substr($body, 0, 200));
+            // Full body + headers ins WP-debug.log für Forensik, lesbarer Auszug ins Import-Log.
+            // Laravel/Symfony-Error-Seiten haben den eigentlichen Fehler oft tief im HTML,
+            // strip_tags() macht ihn lesbarer als der raw HTML.
+            $headers = wp_remote_retrieve_headers($response);
+            $headers_array = is_object($headers) && method_exists($headers, 'getAll') ? $headers->getAll() : (array) $headers;
+            error_log('[Event Import] AB HTTP ' . $http_code . ' after ' . $request_duration . 's. Headers: ' . wp_json_encode($headers_array) . '. Body (' . strlen($body) . ' bytes): ' . $body);
+            $stripped = trim(preg_replace('/\s+/', ' ', strip_tags($body)));
+            throw new Exception('API returned HTTP ' . $http_code . ' nach ' . $request_duration . 's: ' . substr($stripped !== '' ? $stripped : $body, 0, 1500));
         }
 
         if (!is_array($events)) {
             $json_error = json_last_error_msg();
-            error_log('[Event Import] JSON decode failed. Error: ' . $json_error . '. Body (first 500 chars): ' . substr($body, 0, 500));
-            throw new Exception('API-Antwort ist kein gültiges JSON (' . $json_error . '). HTTP ' . $http_code);
+            error_log('[Event Import] JSON decode failed after ' . $request_duration . 's. Error: ' . $json_error . '. Body (first 500 chars): ' . substr($body, 0, 500));
+            throw new Exception('API-Antwort ist kein gültiges JSON (' . $json_error . ') nach ' . $request_duration . 's. HTTP ' . $http_code);
         }
 
         error_log('Total events from API: ' . count($events));
@@ -441,7 +450,8 @@ function handle_cron_import(WP_REST_Request $request) {
         }
         error_log('[Course Import] ' . $course_summary);
 
-        custom_events_log_import('success', "Import abgeschlossen: {$imported_count} Events, Kurse/Workshops: {$course_summary}", [
+        custom_events_log_import('success', "Import abgeschlossen in {$request_duration}s: {$imported_count} Events, Kurse/Workshops: {$course_summary}", [
+            'request_duration_s' => $request_duration,
             'events_from_api' => count(json_decode(wp_remote_retrieve_body($response), true) ?: []),
             'events_imported' => $imported_count,
             'courses_imported' => $course_result['imported'],
