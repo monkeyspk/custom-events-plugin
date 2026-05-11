@@ -462,6 +462,31 @@ function handle_cron_import(WP_REST_Request $request) {
     } catch (Exception $e) {
         error_log('Cron import failed: ' . $e->getMessage());
         custom_events_log_import('error', $e->getMessage());
+
+        // Fallback: Phase 2 (Kurse/Workshops) trotzdem versuchen. Hat eigene gefilterte
+        // API-Calls (&type=course/workshop), kleinere Result-Sets, ist unabhängig von
+        // Phase 1's unfiltered /api/event/dates-Call. Wenn AB nur beim großen Brocken
+        // stirbt, kommen wenigstens die Kurse + Workshops noch durch.
+        try {
+            $fallback_result = Event_Course_Import::run();
+            update_option('course_import_last_result', $fallback_result, false);
+            update_option('course_import_last_run', current_time('mysql'), false);
+            $fallback_summary = $fallback_result['imported'] . ' neu, ' . $fallback_result['updated'] . ' aktualisiert';
+            if (!empty($fallback_result['removed'])) {
+                $fallback_summary .= ', ' . $fallback_result['removed'] . ' entfernt';
+            }
+            if (!empty($fallback_result['errors'])) {
+                $fallback_summary .= ', ' . count($fallback_result['errors']) . ' Fehler';
+                custom_events_log_import('error', '[Fallback Kurse/Workshops] ' . $fallback_summary . ': ' . implode(' | ', $fallback_result['errors']));
+            } else {
+                custom_events_log_import('success', '[Fallback Kurse/Workshops] ' . $fallback_summary . ' (Phase 1 hatte 500, Phase 2 durchgelaufen)');
+            }
+            error_log('[Course Import Fallback] ' . $fallback_summary);
+        } catch (Exception $fallback_e) {
+            error_log('[Course Import Fallback] Auch Phase 2 gescheitert: ' . $fallback_e->getMessage());
+            custom_events_log_import('error', '[Fallback Kurse/Workshops] Auch Phase 2 gescheitert: ' . $fallback_e->getMessage());
+        }
+
         return new WP_REST_Response(['error' => $e->getMessage()], 500);
     }
 }
