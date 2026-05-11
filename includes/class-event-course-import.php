@@ -248,6 +248,13 @@ class Event_Course_Import {
             update_post_meta($post_id, '_angebot_is_ferienkurs', '0');
         }
 
+        // Robuste AB-Quell-Flags als direkte Meta speichern — Status-Routing soll
+        // nicht von der user-editierbaren angebot_kategorie-Taxonomy abhängen.
+        // Auf den Quell-Flags basiert das Mapping in ab_get_order_event_type().
+        update_post_meta($post_id, '_angebot_is_workshop', $is_workshop ? '1' : '0');
+        update_post_meta($post_id, '_angebot_is_kurs', ($is_course && !$is_ferienkurs) ? '1' : '0');
+        update_post_meta($post_id, '_angebot_quelle', 'academyboard');
+
         // Termine aufbauen
         $termine = [];
         usort($dates, function ($a, $b) {
