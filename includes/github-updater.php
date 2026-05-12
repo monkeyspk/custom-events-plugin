@@ -213,31 +213,16 @@ class Custom_Events_GitHub_Updater {
     }
 
     /**
-     * Prüft und führt Auto-Update durch
+     * Prüft und führt Auto-Update durch.
+     *
+     * DEAKTIVIERT seit 2026-05-12: clean-then-copy-Pattern hat im Theme bereits
+     * White-Screens ausgelöst, gleiche Logik hier ist gleich gefährlich.
+     * Deploy läuft ausschliesslich via mu-plugins/parkourone-github-webhook.php
+     * (atomic-rename seit ce945a1). Manueller Update via Button bleibt funktional.
      */
     public function maybe_auto_update() {
-        // Bei jedem Check alte Temp-Ordner aufräumen
         $this->cleanup_old_temp_dirs();
-
-        $last_check = get_transient($this->transient_key);
-
-        if ($last_check !== false) {
-            return;
-        }
-
-        set_transient($this->transient_key, time(), $this->check_interval);
-
-        $remote_version = $this->get_remote_version();
-
-        if (!$remote_version) {
-            return;
-        }
-
-        $local_version = $this->get_local_version();
-
-        if ($remote_version !== $local_version) {
-            $this->do_update();
-        }
+        return;
     }
 
     /**
