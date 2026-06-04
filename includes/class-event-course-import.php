@@ -92,7 +92,7 @@ class Event_Course_Import {
         $removed = self::cleanup_stale_angebote($imported_course_ids);
         $result['removed'] = $removed;
         if ($removed > 0) {
-            $result['log'][] = $removed . ' veraltete Kurse/Workshops in Papierkorb verschoben';
+            $result['log'][] = $removed . ' veraltete Kurse/Workshops endgueltig geloescht';
         }
 
         error_log('[Course Import] Fertig: ' . $result['imported'] . ' neu, ' . $result['updated'] . ' aktualisiert, ' . $removed . ' entfernt');
@@ -400,7 +400,8 @@ class Event_Course_Import {
 
     /**
      * Entfernt API-importierte Angebote deren course_id nicht mehr in der API ist.
-     * Verschiebt in den Papierkorb (nicht permanent löschen) und deaktiviert WC-Produkt.
+     * Loescht permanent (force delete, kein Papierkorb) und deaktiviert WC-Produkt,
+     * damit gleichnamige Events/Angebote spaeter wieder angelegt werden koennen.
      */
     private static function cleanup_stale_angebote(array $active_course_ids): int {
         $removed = 0;
@@ -438,8 +439,8 @@ class Event_Course_Import {
                 }
             }
 
-            wp_trash_post($post_id);
-            error_log('[Course Import] Papierkorb: ' . get_the_title() . ' (course_id: ' . $course_id . ')');
+            wp_delete_post($post_id, true);
+            error_log('[Course Import] Geloescht: ' . get_the_title() . ' (course_id: ' . $course_id . ')');
             $removed++;
         }
         wp_reset_postdata();
