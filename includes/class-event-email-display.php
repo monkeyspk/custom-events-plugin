@@ -67,6 +67,10 @@ function add_full_event_info_to_order($item, $cart_item_key, $values, $order) {
         $event_title_clean = preg_replace('/\s+/', ' ', trim($event_title_clean));
 
         // Basis Event-Daten speichern
+        // _event_id + _event_product_id direkt aufs Item, damit die spätere Self-Service-Umbuchung
+        // nicht vom (später löschbaren) Produkt abhängt. update_meta_data = idempotent.
+        $item->update_meta_data('_event_id', $event_id);
+        $item->update_meta_data('_event_product_id', $product_id);
         $item->add_meta_data('_event_title', $event_title);
         $item->add_meta_data('_event_title_clean', $event_title_clean); // Speichere den bereinigten Titel
         $item->add_meta_data('_event_date', $event_date);

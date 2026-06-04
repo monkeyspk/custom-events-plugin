@@ -844,7 +844,7 @@ class Event_Rebooking_Manager {
             'rebooking-customer-script',
             plugin_dir_url(dirname(__FILE__)) . 'assets/js/rebooking-customer.js',
             array('jquery'),
-            '1.0.0',
+            '1.1.0',
             true
         );
 
@@ -872,6 +872,7 @@ class Event_Rebooking_Manager {
                 'recommendedLabel' => __('Empfohlen', 'your-text-domain'),
                 'newLinkLabel'   => __('Weitere Umbuchung starten', 'your-text-domain'),
                 'noSlots'        => __('Aktuell keine Termine verfügbar.', 'your-text-domain'),
+                'allFull'        => __('Alle kommenden Termine deiner Klasse sind aktuell ausgebucht. Bitte melde dich bei uns – wir finden gemeinsam einen Platz für dich.', 'your-text-domain'),
                 'loadMore'       => __('Mehr Termine anzeigen', 'your-text-domain'),
             ),
         ));
@@ -959,6 +960,29 @@ class Event_Rebooking_Manager {
         $order_event_id = intval($order->get_meta('_event_id'));
         if ($order_event_id) {
             return $order_event_id;
+        }
+
+        // Letzter Fallback: Produkt gelöscht UND keine _event_id gespeichert (Altbestellungen).
+        // Das Live-Event über den gespeicherten Klassentitel auflösen, damit die Umbuchung
+        // weiterhin funktioniert, statt mit "missing_event_item" abzubrechen.
+        $event_title = $item->get_meta('_event_title_clean');
+        if (empty($event_title)) {
+            $event_title = $item->get_meta('_event_title');
+        }
+        if (!empty($event_title)) {
+            $matched = get_posts(array(
+                'post_type'      => 'event',
+                'post_status'    => 'publish',
+                'title'          => $event_title,
+                'posts_per_page' => 1,
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+                'fields'         => 'ids',
+                'no_found_rows'  => true,
+            ));
+            if (!empty($matched)) {
+                return intval($matched[0]);
+            }
         }
 
         return 0;

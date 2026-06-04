@@ -68,6 +68,11 @@
 
         const visibleOptions = slotOptions.slice(0, visibleSlots);
         const hasMore = slotOptions.length > visibleSlots;
+        const hasAvailable = slotOptions.some(function(option) { return option.is_available; });
+        // Optionen vorhanden, aber alle ausgebucht → klare Meldung statt nur grauer Liste.
+        const allFullNotice = (slotOptions.length > 0 && !hasAvailable)
+            ? `<p class="customer-rebooking-allfull">${settings.i18n.allFull || settings.i18n.noSlots || ''}</p>`
+            : '';
 
         const participantsRow = order.participants
             ? `<p class="participants-row"><strong>${order.participants_count}</strong> · ${order.participants}</p>`
@@ -92,9 +97,10 @@
                     <div class="slot-list">
                         ${buildOptions(visibleOptions)}
                     </div>
+                    ${allFullNotice}
                     <p class="customer-rebooking-help">${settings.i18n.selectSubtitle}</p>
                     ${hasMore ? `<button type="button" class="slot-more">${settings.i18n.loadMore}</button>` : ''}
-                    <button type="submit" class="customer-rebooking-submit">${settings.i18n.submitLabel}</button>
+                    <button type="submit" class="customer-rebooking-submit" ${hasAvailable ? '' : 'disabled'}>${settings.i18n.submitLabel}</button>
                 </form>
             </div>`;
 
