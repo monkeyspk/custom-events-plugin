@@ -78,7 +78,25 @@ function custom_events_validate_rebooking_token($order_id, $token) {
  * Gibt die URL der Umbuchungsseite zurück. Fallback ist /umbuchen/.
  */
 function custom_events_get_rebooking_page_url() {
+    // 1) Standard-Slug 'umbuchen'.
     $page = get_page_by_path('umbuchen');
+
+    // 2) Fallback: veröffentlichte Seite, die den Shortcode tatsächlich enthält –
+    //    slug-unabhängig (deckt z.B. dresden /probetraining-umbuchung/ ab, wo der
+    //    feste /umbuchen/-Link sonst ins 404 läuft).
+    if (!$page) {
+        global $wpdb;
+        $page_id = (int) $wpdb->get_var(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_type = 'page' AND post_status = 'publish'
+               AND post_content LIKE '%[event_customer_rebooking%'
+             ORDER BY ID ASC LIMIT 1"
+        );
+        if ($page_id) {
+            $page = get_post($page_id);
+        }
+    }
+
     if ($page) {
         $url = get_permalink($page->ID);
     } else {
