@@ -149,7 +149,14 @@ class Event_Course_Import {
 
         $price     = $info['price'] ?? null;
         $has_price = $price !== null && floatval($price) > 0;
-        $status    = $has_price ? 'publish' : 'draft';
+
+        // Workshops (und Ferienkurse) sind häufig bewusst gratis (0€), z.B. Sommerfest /
+        // Public Meeting. Sie sollen trotzdem veröffentlicht werden können. Nur ein Kurs
+        // OHNE Preis gilt als unvollständig und bleibt zur manuellen Prüfung im Entwurf.
+        $is_free_publishable_type = !empty($info['is_workshop'])
+            || (!empty($info['is_course']) && (stripos($name, 'ferienkurs') !== false || stripos($name, 'ferien') !== false));
+        $publishable = $has_price || $is_free_publishable_type;
+        $status      = $publishable ? 'publish' : 'draft';
 
         if ($is_new) {
             $post_id = wp_insert_post([
@@ -168,7 +175,10 @@ class Event_Course_Import {
                 'post_title'   => $name,
                 'post_content' => $info['description'] ?? '',
             ];
-            if ($is_new || !$has_price) {
+            // Status beim Update nur erzwingen, wenn das Angebot NICHT veröffentlichbar
+            // ist (Kurs ohne Preis). So wird ein manuell veröffentlichter Gratis-Workshop
+            // beim nächsten Cron-Lauf nicht mehr zurück auf Entwurf gesetzt.
+            if ($is_new || !$publishable) {
                 $update['post_status'] = $status;
             }
             wp_update_post($update);
