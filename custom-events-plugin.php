@@ -139,7 +139,10 @@ function handle_cron_import(WP_REST_Request $request) {
             define('DOING_IMPORT', true);
         }
 
-        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+        // dateFrom=heute (WP-Ortszeit): ohne diesen Parameter liefert AcademyBoard
+        // erst ab MORGEN aus, wodurch heutige Probetrainings nie in WP ankommen.
+        $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN
+            . '&dateFrom=' . current_time('Y-m-d');
         error_log('Requesting API URL: ' . preg_replace('/token=[^&]+/', 'token=***', $api_url));
 
         $request_start = microtime(true);
@@ -605,7 +608,10 @@ function import_events_from_api() {
 
     error_log('Starting event import from external API...');
 
-    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN;
+    // dateFrom=heute (WP-Ortszeit): ohne diesen Parameter liefert AcademyBoard
+    // erst ab MORGEN aus, wodurch heutige Probetrainings nie in WP ankommen.
+    $api_url = 'https://academyboard.parkourone.com/api/event/dates?token=' . EVENT_API_TOKEN
+        . '&dateFrom=' . current_time('Y-m-d');
     $args = array(
         'timeout' => 120,
         'sslverify' => true
