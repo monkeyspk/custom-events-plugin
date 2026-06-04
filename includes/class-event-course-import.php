@@ -247,14 +247,20 @@ class Event_Course_Import {
             stripos($name, 'ferien') !== false
         );
 
+        // Die automatische Basis-Kategorie wird per $append=true gesetzt, damit der
+        // wiederkehrende Cron-Import manuell ergänzte Kategorien (z.B. "Ferienkurs")
+        // NICHT mehr entfernt. Ohne append ersetzt wp_set_object_terms() alle Terms
+        // und der Admin-Edit war ~10 Min später (nächster Cron) wieder weg.
+        // Status-Routing hängt ohnehin an den _angebot_is_* Meta-Flags (siehe unten),
+        // nicht an dieser Taxonomy — die Taxonomy ist rein für Anzeige/Admin-Ordnung.
         if ($is_ferienkurs) {
-            wp_set_object_terms($post_id, 'ferienkurs', 'angebot_kategorie');
+            wp_set_object_terms($post_id, 'ferienkurs', 'angebot_kategorie', true);
             update_post_meta($post_id, '_angebot_is_ferienkurs', '1');
         } elseif ($is_workshop) {
-            wp_set_object_terms($post_id, 'workshop', 'angebot_kategorie');
+            wp_set_object_terms($post_id, 'workshop', 'angebot_kategorie', true);
             update_post_meta($post_id, '_angebot_is_ferienkurs', '0');
         } else {
-            wp_set_object_terms($post_id, 'kurs', 'angebot_kategorie');
+            wp_set_object_terms($post_id, 'kurs', 'angebot_kategorie', true);
             update_post_meta($post_id, '_angebot_is_ferienkurs', '0');
         }
 
