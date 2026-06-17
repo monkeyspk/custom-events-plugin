@@ -282,13 +282,19 @@ class Event_Course_Import {
         // Kurs/Ferienkurs: mehrere Daten, 1 Gesamtpreis → 1 WC-Produkt (Paket)
         // Beide nutzen _angebot_ferienkurs_produkt_id für das single-product.
         $buchungsart_existing = get_post_meta($post_id, '_angebot_buchungsart', true);
+        $buchungsart_manual   = get_post_meta($post_id, '_angebot_buchungsart_manual', true) === '1';
 
         foreach ($dates as $d) {
             $termine[] = self::build_termin_entry($d, $venue);
         }
 
-        if ($buchungsart_existing === 'extern') {
-            // Admin hat manuell extern gesetzt → nicht überschreiben
+        if ($buchungsart_manual || $buchungsart_existing === 'extern') {
+            // Admin-Override (manuell gesetzt oder 'extern') → Buchungsart NICHT überschreiben.
+            // WC-Produkt nur pflegen, wenn die (manuelle) Buchungsart 'woocommerce' ist.
+            if ($buchungsart_existing === 'woocommerce' && $has_price) {
+                $product_id = self::ensure_wc_product_single($post_id, $name, $price, $dates);
+                update_post_meta($post_id, '_angebot_ferienkurs_produkt_id', $product_id);
+            }
         } elseif ($has_price) {
             update_post_meta($post_id, '_angebot_buchungsart', 'woocommerce');
             $product_id = self::ensure_wc_product_single($post_id, $name, $price, $dates);
